@@ -1,0 +1,306 @@
+---
+title: "Atividade Prática 4"
+author: 
+- Autor "Bruno Marcelino"
+- Autor "Gabriela Lamas"
+- Autor "David Aleksander"
+- Autor "Daniel Rocha"
+- Autor "Felipe Robadel"
+
+date: "12/02/2021"
+output:
+  html_document: default
+---
+
+# Introdução e Tratamento dos Dados
+
+Usaremos o conjunto de pacotes `"tidyverse"` para realizar algumas operações, sobretudo utilizando recursos gráficos. 
+
+```{r, message = FALSE}
+##### ----- Importando Pacotes ------ #####
+
+library("tidyverse")
+library("tidyquant")
+library("Quandl")
+library("timetk")
+library("devtools")
+library("readxl")
+library("AER")
+library("fBasics")
+```
+
+<br />
+
+# Importação e Construção da Base de Dados: 
+
+<br />
+
+```{r, message = FALSE}
+##### ------ Importando Dados ------ #####
+
+# Cotações
+ativos <- c("VALE3.SA", "^BVSP") # Localizar e Substituir o nome do ativo por outros
+inicio <- as.Date("2010-01-04")
+fim <- as.Date("2020-12-30")
+
+cotacao <- ativos %>% 
+    tq_get(get = "stock.prices", from = inicio, to = fim) %>% 
+    mutate(adjusted = na.locf(adjusted))
+
+# Retornos
+df_retornos <- cotacao %>% 
+    group_by(symbol) %>% 
+    select(date, adjusted) %>% 
+    tq_transmute(select = adjusted,
+                 mutate_fun = periodReturn,
+                 period = "daily",
+                 type = "arithmetic",
+                 col_rename = "retorno") %>% 
+    spread(key = symbol, value = retorno)
+
+##### ------ Importando a taxa SELIC da API do BACEN (de 2010 até hoje) ------ #####
+
+Quandl.api_key('TC1ow5j6G7s4SFHTzgDz') # Acrescentando a chave da API - Comando necessário pra acessar o Quandl
+selic_diaria <-  as.data.frame(Quandl("BCB/11", type = "xts")/100) # Importando a serie do selic do Bacen
+df_selic <- selic_diaria %>% 
+    rownames_to_column() %>% 
+    tibble() %>% 
+    rename("date" = rowname, "selic" = V1) %>% 
+    mutate(selic = na.locf(selic))
+
+df_selic$date <- as.Date(df_selic$date)
+
+# acréscimo na base de dados
+df_retornos <- df_retornos %>% left_join(df_selic, by = "date")
+```
+
+<br />
+
+# Estipulando modelos de regressão: 
+
+<br />
+
+```{r}
+##### ------ Montando regressão do CAPM ------ #####
+
+df_capm <- df_retornos %>% 
+    transmute("date" = date,
+              "Rp-Rf" = VALE3.SA - selic,
+              "Rm-Rf" = `^BVSP` - selic)
+
+capm1 <- lm(df_capm$`Rp-Rf` ~ df_capm$`Rm-Rf`)
+summary(capm1)
+
+##### ------ Montando regressão de Fama-French ------ #####
+
+MKT_Factor <- read_excel("D:/Dropbox/UFMG/Programação/R/Métodos/Ativ Prát 3/Market_Factor.xls")
+HML_Factor <- read_excel("D:/Dropbox/UFMG/Programação/R/Métodos/Ativ Prát 3/HML_Factor.xls")
+SMB_Factor <- read_excel("D:/Dropbox/UFMG/Programação/R/Métodos/Ativ Prát 3/SMB_Factor.xls")
+
+MKT <- MKT_Factor %>% select(date, Rm_minus_Rf) %>% rename("MKT" = Rm_minus_Rf)
+MKT$date <- as.Date(MKT$date)
+
+HML <- HML_Factor %>% select(date, HML)
+HML$date <- as.Date(HML$date)
+
+SMB <- SMB_Factor %>% select(date, SMB)
+SMB$date <- as.Date(SMB$date)
+
+fatores <- df_capm %>% 
+    left_join(HML, by = "date") %>% 
+    left_join(SMB, by = "date") %>% 
+    left_join(MKT, by = "date") %>% 
+    select(-`Rm-Rf`)
+
+ffrench1 <- lm(`Rp-Rf` ~ MKT + HML + SMB, data = fatores)
+summary(ffrench1)
+```
+<br />
+
+#### QUESTÃO 1:
+
+<br />
+
+```{r}
+# A) Teste de normalidade dos resíduos de Jarque-Bera
+
+jarqueberaTest(residuals(capm1))
+jarqueberaTest(residuals(ffrench1))
+
+# tanto para o modelo de Fama-French quanto para o CAPM, o teste rejeita a hipótese nula de que os resíduos seguem uma distribuição normal.
+
+# B) Medidas de Influência das observações
+
+outliers_capm <- influence.measures(capm1)
+outliers_ffrench <- influence.measures(ffrench1)
+
+# Gráficos de identificação dos outliers
+
+par(mfrow=c(2,3))
+plot(ffrench1, which=1:6)
+
+# para o modelo de Fama-French, o principal gráfico (influência em relação a resíduos padronizados) indica que não há outliers tão influentes sobre o modelo, o que pode caracterizar sua robustez (pois envolve mais variáveis)
+
+par(mfrow=c(2,3))
+plot(capm1, which=1:6)
+
+# para o modelo CAPM, houveram diversos resíduos que ultrapassaram o limite padrão estabelecido para a influência, interferindo no ajuste do modelo.
+
+# C) Testes de heterocedasticidade de Breusch-Pagan
+
+bptest(capm1)
+
+# o modelo CAPM aceita a hipótese nula do teste de Breusch-Pagan, o que o caracteriza como homocedástico
+
+bptest(ffrench1)
+
+# o modelo de Fama-French rejeita a hipótese nula, portanto há indícios de heterocedasticidade
+
+# D) Testes de Correlação Serial
+
+# Teste de Durbin-Watson
+
+dwtest(capm1)
+dwtest(ffrench1)
+
+# O teste de Durbin-Watson em ambos os modelos indica que há correlação serial, por rejeitarem a hipótese nula.
+
+# Teste de Breusch-Godfrey
+
+bgtest(capm1)
+
+# O teste de Breusch-Godfrey indica que há correlação serial no modelo CAPM, rejeitando a hipótese nula. 
+
+bgtest(ffrench1)
+
+# Já o teste de Breusch-Godfrey indica, por pouco, que não haveria correlação serial no modelo Fama-French, aceitando a hipótese nula.
+```
+
+<br />
+
+#### QUESTÃO 2:
+
+<br />
+
+```{r}
+# Gerando CAPM e Fama-French sem outliers
+
+outliers_capm <- which(apply(influence.measures(capm1)$is.inf, 1, any))
+outliers_ffrench <- which(apply(influence.measures(ffrench1)$is.inf, 1, any))
+
+capm2 <- lm(`Rp-Rf` ~ `Rm-Rf`, data = df_capm[-outliers_capm, ])
+summary(capm2)
+
+ffrench2 <- lm(`Rp-Rf` ~ MKT + HML + SMB, data = fatores[-outliers_ffrench, ])
+summary(ffrench2)
+
+# A) Teste de normalidade dos resíduos de Jarque-Bera
+
+jarqueberaTest(residuals(capm2))
+jarqueberaTest(residuals(ffrench2))
+
+# Os dois testes indicam que os resíduos de ambos os modelos sem outliers seguem uma distribuição normal, consertando o problema anterior.
+
+# B) Medidas de Influência das observações
+
+# Gráficos de identificação dos outliers
+
+par(mfrow=c(2,3))
+plot(capm2, which=1:6)
+
+par(mfrow=c(2,3))
+plot(ffrench2, which=1:6)
+
+# ainda que tenhamos retirado os outliers obtidos com a função influence.measures, os dois modelos apresentaram no mínimo três dados que apresentaram distância de Cook mais alta que os demais. O restante dos gráficos relata o mesmo. 
+
+# C) Testes de heterocedasticidade de Breusch-Pagan
+
+bptest(capm2)
+bptest(ffrench2)
+
+# Os dois testes indicam a ausência do problema da heterocedasticidade nos dois modelos, o que é um grande benefício para o ajuste da regressão de maneira próxima da realidade.
+
+# D) Testes de Correlação Serial
+
+# Teste de Durbin-Watson
+
+dwtest(capm2)
+dwtest(ffrench2)
+
+# Entretanto, o modelo der Durbin-Watson indica que há altíssima correlação serial nos modelos, sobretudo no CAPM (95% de aceitação da hipótese nula). Ainda que seja um problema, era um problema a se esperar dado que se tratam de dados de séries temporais, e o retorno passado tem grande influência no retorno futuro. 
+
+# Teste de Breusch-Godfrey
+
+bgtest(capm2)
+bgtest(ffrench2) 
+
+# Já no teste de Breusch-Godfrey, os modelos apresentaram ausência de correlação serial após a retirada dos outliers, tendo em vista que não rejeitaram a hipótese nula. No caso do CAPM foi por pouco, mas para o Fama-French houveram mudanças significativas no ajuste do que fizeram o teste apresentar p-valor de 95%)
+
+```
+
+<br />
+
+#### QUESTÃO 3:
+
+<br />
+
+```{r}
+### Correção da heterocedasticidade -> erros-padrão de White ### 
+ 
+# sem correção
+summary(capm2)
+summary(ffrench2)
+
+# com correção 
+coeftest(capm2, vcov. = vcovHAC)
+coeftest(ffrench2, vcov. = vcovHAC)
+
+# Nesse teste de erros-padrão de White, é gerado um modelo que atribui menores pesos a informações discrepantes. Sendo assim, são corrigidos os valores dos coeficientes e os seus erros-padrão, tornando-o mais robusto (ou seja, menos sensível à presença de outliers).
+
+### Correção da normalidade dos resíduos -> dummy que equivale a 1 se a observação for identificada como um outlier ###
+
+df_capm <- df_capm %>% 
+    mutate("position" = seq(1:length(date))) %>% 
+    mutate("D1" = ifelse(position %in% outliers_capm, 1, 0))
+
+fatores <- fatores %>% 
+    mutate("position" = seq(1:length(date))) %>% 
+    mutate("D2" = ifelse(position %in% outliers_capm, 1, 0))
+
+# Análise da regressão com dummy que só vale para os outliers
+
+capm3 <- lm(`Rp-Rf` ~ `Rm-Rf` + D1, data = df_capm)
+summary(capm3) 
+
+ffrench3 <- lm(`Rp-Rf` ~ MKT + HML + SMB + D2, data = fatores)
+summary(ffrench3)
+
+# Concluimos que os outliers não estão contidos nos padrões gerais da amostra, pois a variável dummy é significativa. Isso significa que sua presença não contribui para as especificações do modelo, estando muito fora dos padrões gerais da amostra (podendo ser incluída como outra variável e assim melhorando o ajuste do modelo por ser significativa)
+
+### Correção da correlação serial
+
+# Segundo os testes realizados em modelos que retiraram os outliers, pudemos concluir que a correlação serial já foi corrigida. Entretanto, a função "coeftest" gera um modelo corrigido para esse problema com o parâmetro (vcov. = vcovHAC)
+```
+
+<br />
+
+#### QUESTÃO 3:
+
+<br />
+
+O modelo Fama-French se mostrou melhor que o CAPM no sentido de incluir a mesmas variável (prêmio de risco do mercado) em junção com outras que se demonstraram também significantes ao longo do processo, como o SMB e o HML. Além disso, vale ressaltar que vale a pena estipular sua regressão sem intercepto pois ele já se apresenta estatisticamente igual a zero. Seguem abaixo os problemas enfrentados por nós no módulo e suas respectivas conclusões:
+
+##### Heterocedasticidade
+
+A retirada dos outliers do modelo Fama-French tornou seus resultados de testes de heteroedasticidade altamente conclusivos para homoedasticidade, o que é ótimo e um pressuposto para a regressão de variáveis pelo método linear e de mínimos quadrados. 
+
+##### Pressuposto de normalidade dos resíduos
+
+Os testes indicaram que os modelos sem outliers indicam confirmação do pressuposto de normalidade dos resíduos no novo modelo, o que é um forte benefício para seu ajuste à vida real.
+
+##### Correlação Serial
+
+Os testes não forneceram estatísticas realmente conclusivas de que o modelo sem outliers apresentou ou não correlação serial, o que ainda deve ser estudado mais a fundo por nós, os responsáveis pelos métodos econométricos. Como não foi possível armazenar os dados do modelo que corrige esse problema por meio do método de erros-padrão de White, a correção ou não da correlação (que deveria ter sido feita) ainda é uma incógnita de forma empírica. 
+
+
+

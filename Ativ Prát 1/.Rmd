@@ -1,0 +1,159 @@
+---
+title: "Relatório Atividade Prática 1"
+author: "Grupo 5"
+date: "18/12/2020"
+output: 
+  html_document: default
+  word_document: default
+---
+
+#### Integrantes do Grupo: 
+
+* Bruno Marcelino 
+* Daniel Rocha      
+* David Alexsander
+* Felipe Robadel 
+* Gabriela Lamas
+
+# Introdução e Tratamento dos Dados
+
+Usaremos o conjunto de pacotes `"tidyverse"` para realizar algumas operações, sobretudo utilizando recursos gráficos. 
+
+
+```{r, message = FALSE}
+# ---- Importação das Bibliotecas ----
+library("MASS")
+library("AER")
+library("tidyverse")
+
+df <- tibble(Boston)
+```
+
+<br />
+
+# Respostas 
+
+<br />
+
+#### QUESTÃO 1:
+
+```{r, echo = FALSE}
+mod <- lm(df$medv ~ df$lstat)
+summary(mod)
+```
+
+<br />
+
+#### QUESTÃO 2:
+
+```{r, echo = FALSE}
+grafico_1 <- ggplot(df, aes(x = lstat , y = medv)) +
+    geom_point() + 
+    ggtitle("Gráfico 1") +
+    xlab("% Moradores de Baixa Renda") +
+    ylab("Valor Médio das Casas") +
+    geom_smooth(method = "lm", color = "red")
+
+print(grafico_1)
+```
+
+<br />
+
+#### QUESTÃO 3:
+
+```{r, echo = FALSE}
+log_mod <- lm(df$medv ~ I(log(df$lstat, base = exp(1))))
+summary(log_mod)
+```
+
+<br />
+
+#### QUESTÃO 4:
+
+```{r, echo = FALSE}
+grafico_2 <- ggplot(df, aes(x = lstat , y = medv)) +
+  geom_point() + 
+  ggtitle("Gráfico 2") +
+  xlab("Log Neperiano da % de Moradores de Baixa Renda") +
+  ylab("Valor Médio das Casas") +
+  geom_smooth(method = lm, formula = y ~ log(x, base = exp(1)), color = "red")
+
+print(grafico_2)
+```
+
+<br />
+
+#### QUESTÃO 5:
+
+```{r, echo = FALSE}
+log2_mod <- lm(df$medv ~ log(df$lstat) + I(log(df$lstat)^2))
+summary(log2_mod)
+
+grafico_3 <- ggplot(df, aes(x = lstat , y = medv)) +
+  geom_point() + 
+  ggtitle("Gráfico 3") +
+  geom_smooth(method = lm, formula = y ~ x + I(log(x, base = exp(1))^2), color = "red")
+
+print(grafico_3)
+```
+
+<br />
+
+#### QUESTÃO 6:
+
+```{r}
+## Argumentos
+
+x1 = 10
+x2 = 11
+
+# Função que retorna a variação de y em um intervalo de x, que se situa entre por x1 e x2 
+delta_y <- function(x1, x2){
+  c = summary(log2_mod)$coefficients[1]
+  b = summary(log2_mod)$coefficients[2]
+  a = summary(log2_mod)$coefficients[3]
+  
+  y1 = b*log(x1, base = exp(1)) + a*log(x1, base = exp(1))^2 + c
+  y2 = b*log(x2, base = exp(1)) + a*log(x2, base = exp(1))^2 + c
+  return(y2 - y1)
+  }
+  
+delta_y(x1, x2)
+```
+
+<br />
+
+#### QUESTÃO 7:
+
+```{r}
+df <- df %>% 
+  mutate(old = ifelse(age >= 95, 1, 0))
+
+mod_co <- lm(df$medv ~ df$chas + df$old + I(df$chas*df$old))
+summary(mod_co)
+```
+
+<br />
+
+#### QUESTÃO 8:
+
+```{r, echo = FALSE}
+
+```
+
+<br />
+
+#### QUESTÃO 9:
+
+```{r, echo = FALSE}
+mod_io <- lm(df$medv ~ df$indus + df$old + I(df$indus*df$old))
+summary(mod_io)
+```
+
+<br />
+
+#### QUESTÃO 10:
+
+```{r, echo = FALSE}
+
+```

@@ -1,0 +1,263 @@
+---
+title: "Relatório Atividade Prática 1"
+author: "Grupo 5"
+date: "18/12/2020"
+output: 
+  html_document: default
+  word_document: default
+---
+  
+#### Integrantes do Grupo: 
+
+* Bruno Marcelino 
+* Daniel Rocha      
+* David Alexsander
+* Felipe Robadel 
+* Gabriela Lamas
+
+# Introdução e Tratamento dos Dados
+
+Usaremos o conjunto de pacotes `"tidyverse"` para realizar algumas operações, sobretudo utilizando recursos gráficos. 
+
+```{r}
+#Tratamento dos Dados
+
+n_alunos <- c(23,19,30,22,23,29,35,36,33,25)
+
+pont_med <- c(430,430,333,410,390,377,325,310,328,375)
+
+library("tidyverse")
+df <- tibble("Num_de_Alunos" = c(23,19,30,22,23,29,35,36,33,25),
+                "Pont_Media" = c(430,430,333,410,390,377,325,310,328,375),
+                )
+```
+
+<br />
+
+# Respostas 
+
+<br />
+
+#### QUESTÃO 1: 
+
+Criação de um gráfico de dispersão que relaciona os dois vetores previamente declarados.
+
+```{r}
+
+grafico_1 <- ggplot(df, aes(x = Num_de_Alunos , y = Pont_Media)) +
+ geom_point() + 
+ ggtitle("Gráfico 1") +
+ xlab("Número de Alunos") +
+ ylab("Pontuação Média") +
+ xlim(10, 40) +
+ ylim(200, 450)  
+
+print(grafico_1)
+
+```
+
+<br />
+
+#### QUESTÃO 2: 
+
+Cálculo da média, variância e desvio-padrão da pontuação média dos alunos.
+
+```{r}
+
+media <- df$Pont_Media %>% mean 
+print(paste("A média das pontuações é de", media, "pontos"))
+
+variancia <- df$Pont_Media %>% var 
+print(paste("A variância das pontuações é de", variancia, "pontos"))
+
+desvio_p <- df$Pont_Media %>% sd
+print(paste("O desvio-padrão das pontuações é de", desvio_p, "pontos"))
+
+```
+
+<br />
+
+#### QUESTÃO 3: 
+
+Cálculo da correlação e covariância entre o número de alunos por turma e sua pontuação média.
+
+```{r}
+cova <- cov(df$Num_de_Alunos, df$Pont_Media)
+print(paste("A covariância entre o número de alunos por turma e sua pontuação média é de", cova))
+
+corr <- cor(df$Num_de_Alunos, df$Pont_Media)
+print(paste("A correlação entre o número de alunos por turma e sua pontuação média é de", corr))
+
+```
+
+<br />
+
+#### QUESTÃO 4: 
+
+Atribuição de uma regressão linear que tenha o número de alunos da turma como variável explicativa de sua pontuação média.
+
+```{r}
+reg <- lm(df$Pont_Media ~ df$Num_de_Alunos)
+summary(reg)
+```
+
+<br />
+
+#### QUESTÃO 5: 
+
+Criação de um segundo gráfico, que contenha a reta de regressão estipulada no modelo acima.
+
+```{r}
+grafico_2 <- ggplot(df, aes(x = Num_de_Alunos , y = Pont_Media)) +
+        geom_point() + 
+        ggtitle("Gráfico 2") +
+        geom_line() +
+        xlab("Número de Alunos") +
+        ylab("Pontuação Média") +
+        xlim(10, 40) +
+        ylim(200, 450) +
+        geom_smooth(method = "lm")
+
+print(grafico_2)
+```
+
+<br />
+
+#### QUESTÃO 6: 
+
+Trazer o dado do r-quadrado da regressão.
+
+```{r}
+
+r_quadrado <- summary(reg)$r.squared
+print(paste("O R-quadrado é igual a", round(r_quadrado, 2)))
+```
+
+<br />
+
+#### QUESTÃO 7: 
+
+Criação de uma tabela com os coeficientes estimados (intercepto e coeficiente angular), erros padrão,
+estatísticas t, e p-valores da variável explicativa e do intercepto do modelo.
+
+```{r}
+estatisticas_da_reg <- summary(reg)
+coef_estimados <- tibble("Coeficientes" = c("Intercepto", "Var.Explicativa"),
+                         "Valor dos Coef" = estatisticas_da_reg$coefficients[c(1:2)],
+                         "R-quadrado" = estatisticas_da_reg$r.squared,
+                         "Erro-padrão" = estatisticas_da_reg$coefficients[c(3:4)],
+                         "Estatística-t" = estatisticas_da_reg$coefficients[c(5:6)],
+                         "P-Valor" = estatisticas_da_reg$coefficients[c(7:8)],
+                         )
+
+print(coef_estimados)
+```
+
+<br />
+
+#### QUESTÃO 8: 
+
+Apresentar a matriz de variâncias e covariâncias dos coeficientes
+
+```{r}
+
+matriz_cov <- estatisticas_da_reg$cov.unscaled
+ print(matriz_cov)
+
+```
+
+<br />
+
+#### QUESTÃO 9: 
+
+O erro-padrão é a medida de incerteza ao se estimar um parâmetro, e a estatística-t é a medida da distância entre a estimativa e uma distribuição com média zero. Quanto menor o erro-padrão, maior deverá ser o valor da estatística-t, o que reflete em um aumento do poder explicativo do nosso modelo. 
+
+As estatísticas da regressão fornecem o dado de que o p-valor do intercepto é **menor** do que 0.05. Isso significa que, 
+por ser menor do que o valor do teste de significância (5%), a hipótese nula pode ser rejeitada e dizemos que o intercepto é **estatisticamente diferente** de zero. 
+
+A função `summary` também realiza o teste de significância a partir da seção `Signif. codes:`, que por ser avaliado em três asteriscos, reflete que a probablidade de não se rejeitar a hipótese nula é bem próxima de zero, estando de acordo com a conclusão obtida. 
+
+```{r}
+summary(reg)
+
+coef_estimados[1,6]
+```
+
+<br />
+
+#### QUESTÃO 10: 
+
+As estatísticas da regressão fornecem o dado de que o p-valor da variável explicativa é **menor** do que 0.05. Isso significa que, por ser menor do que o valor do teste de significância (5%), a hipótese nula pode ser rejeitada.
+
+
+```{r}
+coef_estimados[2,6]
+```
+
+<br />
+
+#### QUESTÃO 11: 
+
+Utilizando o termo implícito `y ~ 0 + x` na fórmula geradora de regressões lineares no R, podemos encontrar uma regressão sem intercepto (a = 0), ou seja, partindo da origem. 
+
+```{r}
+reg_sem_intercepto <- lm(df$Pont_Media ~ 0 + df$Num_de_Alunos)
+
+print(summary(reg_sem_intercepto))
+
+```
+
+<br />
+
+#### QUESTÃO 12: 
+
+Aplicando a reta de regressão sem intercepto na regressão antiga, obtemos: 
+
+```{r}
+est_coef_estimados2 <- summary(reg_sem_intercepto)
+
+coef_estimados2 <- tibble("Coeficientes" = "Var. Explicativa",
+                         "Valor do Coef" = est_coef_estimados2$coefficients[1],
+                         "R-quadrado" = est_coef_estimados2$r.squared,
+                         "Erro-padrão" = est_coef_estimados2$coefficients[2],
+                         "Estatística-t" = est_coef_estimados2$coefficients[3],
+                         "P-Valor" = est_coef_estimados2$coefficients[4]
+                         )
+
+grafico_2 <- ggplot(df, aes(x = Num_de_Alunos , y = Pont_Media)) +
+        geom_point() + 
+        ggtitle("Gráfico 2") +
+        geom_line() +
+        xlab("Número de Alunos") +
+        ylab("Pontuação Média") +
+        xlim(0, 40) +
+        ylim(0, 450) +
+        geom_smooth(method = "lm") +
+        geom_abline(slope = est_coef_estimados2$coefficients[1] , intercept = 0, color = "red")
+
+print(grafico_2)
+```
+
+<br />
+
+#### QUESTÃO 13: 
+
+A inclusão de um intercepto na origem do modelo propõe maior abrangência na análise dos dados. O ponto (0,0) representa a nota média de uma turma que contém zero alunos, ou seja, deve ser zero para que a interpretação do intercepto faça sentido. Dessa forma, é possível estimar o relacionamento entre as variáveis que estão fora do intervalo amostral. 
+
+Estatisticamente, podemos demonstrar que o modelo sem intercepto possui R-quadrado ligeiramente maior em relação ao modelo inicial (o que representa que a sua ESS (Expected Sum of Squares) é proporcionalmente maior em relação à sua TSS (Total Sum of Squares). Além disso, pode-se observar que o erro-padrão da variável explicativa no modelo sem intercepto é maior do que o erro-padrão da variável explicativa no modelo inicial, o que representa uma perda proporcionalmente significativa na capacidade preditiva do modelo sem intercepto. 
+
+Pode-se observar claro enviesamento do modelo sem intercepto ao realizar uma avaliação visual da regressão. Isso demonstra que ainda que seja lógico, não é viável utilizar uma análise puramente centrada no valor do intercepto como forma de definir a validade da regressão, pois o viés de interpretação pode se alterar completamente, ao ponto de não se explicar de maneira correta o relacionamento entre as variáveis de interesse obtidas na amostra. 
+
+O enviesamento é explicado pelo coeficiente de correlação entre as variáveis amostrais, que por ser próximo de -1 (no modelo inicial), representa uma dependência linear inversamente proporcional entre a quantidade de alunos da turma e a sua pontuação média. O modelo sem intercepto apresenta uma regressão de inclinação positiva e um coeficiente de correlação maior do que zero, o que propõe uma possível dependência linear proporcional entre as variáveis, o que não condiz com os resultados obtidos na amostra.   
+
+```{r}
+
+print(coef_estimados)
+print(coef_estimados2)
+print(paste("O P-valor da regressão sem intercepto é", est_coef_estimados2$coefficients[4]))
+
+corr <- cor(df$Num_de_Alunos, df$Pont_Media)
+print(paste("A correlação entre o número de alunos por turma e sua pontuação média é de", corr))
+
+
+```

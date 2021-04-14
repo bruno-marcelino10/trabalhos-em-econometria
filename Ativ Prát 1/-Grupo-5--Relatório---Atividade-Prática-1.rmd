@@ -1,0 +1,14 @@
+---
+title: "Relatório - Atividade Prática 1"
+author: "Grupo 5"
+date: "26/05/2020"
+output: html_document: default
+---
+
+#### Integrantes do Grupo: 
+
+* Bruno Marcelino Borges dos Santos
+* Daniel Moreira Rocha      
+* David Alexsander
+* Felipe Robadel 
+* Gabriela Lamas

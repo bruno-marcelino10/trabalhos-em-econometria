@@ -1,0 +1,152 @@
+---
+title: "Relatório Atividade Prática 6"
+author: "Grupo 5"
+date: "17/03/2020"
+output: 
+  html_document: default
+---
+
+#### Integrantes do Grupo:
+
+* Bruno Marcelino 
+* Daniel Rocha      
+* David Alexsander
+* Felipe Robadel 
+* Gabriela Lamas
+
+
+
+```{r, message = FALSE , echo=FALSE, warning=FALSE}
+##### ----- Importando Pacotes ------ #####
+
+library("tidyverse")
+library("tidyquant")
+library("Quandl")
+library("timetk")
+library("devtools")
+library("readxl")
+library("AER")
+library("fBasics")
+library("readr")
+library("plm")
+```
+
+<br />
+
+# Importação e Construção da Base de Dados: 
+
+<br />
+
+```{r, message = FALSE}
+##### ------ Importando Dados ------ #####
+
+producao <- read_csv("C:/Users/Jeniffer/Downloads/Producao (1).csv")
+producao <- producao %>% select(Empresa, Ano, Capital, Trabalho, Producao)
+
+# Ano = ano da observação
+# Empresa = número de identificação da empresa
+# Capital = valor total dos ativos imobilizados da empresa
+# Trabalho = valor gasto com mão de obra pela empresa
+# Producao = valor agregado da produção da empresa em determinado ano
+
+```
+
+<br />
+
+#### QUESTÃO 1:
+
+<br />
+
+```{r}
+# Estipulando modelo de regressão para dados em painel por efeitos fixos: 
+
+producao_fe <- plm(log(Producao) ~ log(Capital) + log(Trabalho), data = producao, model = "within")
+summary(producao_fe)
+```
+
+<br />
+
+#### QUESTÃO 2:
+
+<br />
+
+
+Em um modelo log-log podemos interpretar os coeficientes $\beta_{i}$ sendo a variação percentual em Y dada uma variação percentual em X. 
+
+$$
+ \beta = \epsilon_{YX} = \frac{dY}{dX} \frac{X}{Y}
+$$
+Então: 
+```{r}
+
+cat(round(summary(producao_fe)$coefficients[[1]] * 2.5, 2))
+```
+
+A interpretação é a mesma para modelos log-log. Logo, uma variação de 2,5% no valor investido em máquinas e equipamentos (Capital) equivale a uma variação de 0,44% na produção total da empresa. 
+
+<br />
+
+#### QUESTÃO 3:
+
+<br />
+
+```{r}
+cat(round((exp( producao_fe$coefficients[[2]]/100)-1)*10*100,2))
+```
+
+Similarmente ao obtido no raciocínio anterior, obtemos que uma variação de 10% no valor investido em máquinas e equipamentos (Capital) equivale a uma variação de 8,43% na produção total da empresa.Neste caso, observamos que por ser uma função do tipo log, foi mais preciso utilizar:
+
+$$e^{\beta_{i}-1}$$
+Ao invés de simplismente observar o coeficiente $\beta$ como no exemplo anterior, que não teve uma diferença significativa.
+
+
+<br />
+
+#### QUESTÃO 4:
+
+<br />
+
+Basta comparar o valor $\alpha$ obtido para cada empresa, dado que estamos tratando de modelos em painel de efeitos fixos para cada uma. Tendo em vista que os coeficientes obtidos são os mesmos para todas as empresas, a que obteria o melhor valor agregado bruto será a que apresenta o maior valor para seu dado intercepto, sendo ele estatisticamente significante (P-valor < 5%).
+
+```{r}
+
+sumario = as.data.frame(summary(fixef(producao_fe)))
+rownames(sumario[which.min(sumario$`Pr(>|t|)`<0.05),])
+
+cat(paste("Dentre os valores com alfas significativos,(P-valor < 5% a émpresa mais eficiente (com maior alfa) é a de código",rownames(sumario[which.min(sumario$`Pr(>|t|)`<0.05),]) ))
+```
+
+
+<br />
+
+#### QUESTÃO 5:
+
+<br />
+No caso do modelo de efeitos aleatórios, o pressuposto de que os $\alpha_{i}$ são fatores aleatórios, com distribuição independente e idêntica entre indivíduos.
+
+```{r}
+# Estipulando modelo de regressão para dados em painel por efeitos aleatórios: 
+
+producao_re <- plm(log(Producao) ~ log(Capital) + log(Trabalho), data = producao, model = "random", random.method = "walhus")
+summary(producao_re)
+```
+
+<br />
+
+#### QUESTÃO 6:
+
+<br />
+
+```{r}
+phtest(producao_re, producao_fe)
+```
+
+<br />
+
+Dado que o p-valor do teste está acima do nível de significância adotado, podemos aceitar a hipótese nula de que ambos os modelos são consistentes. Dessa maneira, podemos afirmar que o modelo de efeitos fixos é eficiente e portanto melhor do que o modelo de efeitos aleatórios. 
+
+
+
+
+
+

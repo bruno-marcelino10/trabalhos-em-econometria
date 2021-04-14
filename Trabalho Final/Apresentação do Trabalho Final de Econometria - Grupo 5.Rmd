@@ -1,0 +1,408 @@
+---
+title: "Apresentação do Trabalho Final de Econometria - Grupo 5"
+author: "Grupo 5"
+date: "22/03/2021"
+output: slidy_presentation
+---
+
+#### Integrantes do Grupo:
+
+* Bruno Marcelino 
+* Daniel Rocha      
+* David Alexsander
+* Felipe Robadel 
+* Gabriela Lamas
+
+```{r, message = FALSE , echo=FALSE, warning=FALSE}
+##### ----- Importando Pacotes ------ #####
+
+library("tidyverse")
+library("tidyquant")
+library("Quandl")
+library("timetk")
+library("devtools")
+library("readxl")
+library("AER")
+library("fBasics")
+library("readr")
+library("plm")
+library("dynlm")
+library("robustbase")
+```
+
+# QUESTÃO 1: Importação e Construção da Base de Dados 
+
+```{r, message = FALSE}
+# Cotações
+ativos <- c("VALE3.SA", "PETR4.SA") # Localizar e Substituir o nome do ativo por outros
+inicio <- as.Date("2010-01-04")
+fim <- as.Date("2020-12-30")
+
+cotacao <- ativos %>% 
+    tq_get(get = "stock.prices", from = inicio, to = fim) %>% 
+    mutate(adjusted = na.locf(adjusted))
+
+# Retornos
+df_retornos <- cotacao %>% 
+    group_by(symbol) %>% 
+    select(date, adjusted) %>% 
+    tq_transmute(select = adjusted,
+                 mutate_fun = periodReturn,
+                 period = "daily",
+                 type = "log",
+                 col_rename = "retorno") %>% 
+    spread(key = symbol, value = retorno)
+```
+
+# QUESTÃO 1: Importando a taxa SELIC da API do BACEN (de 2010 até hoje)
+
+```{r, message = FALSE}
+Quandl.api_key('TC1ow5j6G7s4SFHTzgDz') # Acrescentando a chave da API - Comando necessário pra acessar o Quandl
+selic_diaria <-  as.data.frame(Quandl("BCB/11", type = "xts")/100) # Importando a serie do selic do Bacen
+df_selic <- selic_diaria %>% 
+    rownames_to_column() %>% 
+    tibble() %>% 
+    rename("date" = rowname, "selic" = V1) %>% 
+    mutate(selic = na.locf(selic))
+
+df_selic$date <- as.Date(df_selic$date)
+
+df_retornos <- df_retornos %>% 
+    left_join(df_selic, by = "date")
+```
+
+# QUESTÃO 1: Importando fatores de mercado do NEFIN-USP
+
+```{r, message = FALSE}
+
+MKT_Factor <- read_excel("D:/Dropbox/UFMG/Programação/R/Métodos/Trabalho Final/Market_Factor.xls")
+HML_Factor <- read_excel("D:/Dropbox/UFMG/Programação/R/Métodos/Trabalho Final/HML_Factor.xls")
+SMB_Factor <- read_excel("D:/Dropbox/UFMG/Programação/R/Métodos/Trabalho Final/SMB_Factor.xls")
+
+MKT <- MKT_Factor %>% select(date, Rm_minus_Rf) %>% rename("MKT" = Rm_minus_Rf)
+MKT$date <- as.Date(MKT$date)
+
+HML <- HML_Factor %>% select(date, HML)
+HML$date <- as.Date(HML$date)
+
+SMB <- SMB_Factor %>% select(date, SMB)
+SMB$date <- as.Date(SMB$date)
+```
+
+# QUESTÃO 1: União dos dados e cálculo do prêmio de risco.
+
+```{r, message = FALSE}
+
+df <- df_retornos %>% 
+    transmute("date" = date,
+              "VALE3-Rf" = VALE3.SA - selic,
+              "PETR4-Rf" = PETR4.SA - selic) %>% 
+    left_join(HML, by = "date") %>% 
+    left_join(SMB, by = "date") %>% 
+    left_join(MKT, by = "date") 
+```
+
+# QUESTÃO 1: Estipulando modelos de regressão linear multivariada CAPM e Fama-French 
+
+```{r, message = FALSE}
+##### ------ CAPM ------ #####
+
+capm_a <- lm(`VALE3-Rf` ~ MKT, data = df)
+summary(capm_a)
+
+capm_b <- lm(`PETR4-Rf` ~ MKT, data = df)
+summary(capm_b)
+
+##### ------ Fama-French ------ #####
+
+ffrench_a <- lm(`VALE3-Rf` ~ MKT + HML + SMB, data = df)
+summary(ffrench_a)
+
+ffrench_b <- lm(`PETR4-Rf` ~ MKT + HML + SMB, data = df)
+summary(ffrench_b)
+```
+
+# QUESTÃO 2 - Heterocedasticidade (antes da retirada de outliers)
+
+#####  Teste de Breusch-Pagan
+
+O modelo CAPM inicialmente rejeita a hipótese nula do teste de Breusch-Pagan, o que o caracteriza como heterocedástico
+
+```{r}
+bptest(capm_b) 
+```
+
+O modelo de Fama-French inicialmente rejeita a hipótese nula, o que o caracteriza como heterocedástico
+
+```{r}
+bptest(ffrench_b) 
+```
+
+# QUESTÃO 2 - Correlação Serial (ANTES da retirada de outliers)
+
+##### Teste de Breusch-Godfrey
+
+O teste de Breusch-Godfrey indica que há correlação serial no modelo CAPM, rejeitando a hipótese nula. 
+
+```{r}
+bgtest(capm_b) 
+```
+
+Já o teste de Breusch-Godfrey indica que não haveria correlação serial no modelo Fama-French, aceitando a hipótese nula.
+```{r}
+bgtest(ffrench_b) 
+```
+
+# QUESTÃO 2: Detecção e retirada de Outliers
+
+```{r}
+outliers_capm_b <- which(apply(influence.measures(capm_b)$is.inf, 1, any))
+outliers_ffrench_b <- which(apply(influence.measures(ffrench_b)$is.inf, 1, any))
+
+capm_b_corrigido <- lm(`PETR4-Rf` ~ MKT, data = df[-outliers_capm_b, ])
+summary(capm_b_corrigido)
+
+ffrench_b_corrigido <- lm(`PETR4-Rf` ~ MKT + HML + SMB, data = df[-outliers_ffrench_b, ])
+summary(ffrench_b_corrigido)
+```
+
+# QUESTÃO 2 - Heterocedasticidade (APÓS a retirada de outliers)
+
+##### Teste de Breusch-Pagan
+
+O modelo CAPM rejeita a hipótese nula do teste de Breusch-Pagan, o que o caracteriza como heterocedástico
+
+```{r}
+bptest(capm_b_corrigido) 
+```
+
+O modelo de Fama-French rejeita a hipótese nula, o que o caracteriza como heterocedástico
+
+```{r}
+bptest(ffrench_b_corrigido) 
+```
+
+# QUESTÃO 2 - Correlação Serial (APÓS a retirada de outliers)
+
+##### Teste de Breusch-Godfrey
+
+O teste de Breusch-Godfrey em ambos os modelos indica que agora não há correlação serial, por aceitarem a hipótese nula.
+
+```{r}
+bgtest(capm_b_corrigido) 
+
+bgtest(ffrench_b_corrigido) 
+```
+
+* A retirada dos outliers foi responsável pela correção da correlação serial em ambos os modelos, a partir dos de seus dois testes mais importantes. Entretanto, a heterocedasticidade (variância inconstante dos resíduos) ainda não foi corrigida.
+
+# QUESTÃO 3: Normalidade dos Resíduos (antes das correções)
+
+Ambos os testes mostraram que não há normalidade na distribuição dos resíduos de ambos os modelos (FF e CAPM)
+
+```{r}
+jarqueberaTest(residuals(capm_b_corrigido)) 
+jarqueberaTest(residuals(ffrench_b_corrigido)) 
+```
+
+# QUESTÃO 3: Correções para Heterocedasticidade
+
+* Transformação logarítmica (não aplicável a variáveis negativas)
+
+* Natureza das variáveis
+
+* Outliers (já retirados)
+
+* Regressão com Defasagem
+
+# QUESTÃO 3: Regressão com Defasagem
+
+```{r}
+capm_teste <- dynlm(`PETR4-Rf` ~ MKT + HML + SMB + L(`PETR4-Rf`), data = df[-outliers_capm_b,])
+summary(capm_teste)
+bptest(capm_teste)
+```
+
+O modelo gerado pode até ser considerado homocedástico, porém há diversos problemas como o fato de o R^2 = 1. Não há possibilidade de continuar os cálculos pedidos com o novo modelo.
+
+# QUESTÃO 3: Má especificação das formas funcionais
+
+O teste RESET indicou que no caso do modelo CAPM, há má especificação das formas funcionais. Isso pode gerar heterocedasticidade
+
+```{r}
+resettest(capm_b_corrigido, power = c(2,3,4)) 
+```
+
+* Testando para várias potências, chegamos à conclusão de que a variável `MKT^4` é muito significante
+
+* Alterando a forma funcional do modelo, a heterocedasticidade foi corrigida. Entretanto, o teste RESET ainda indica que há melhores formas funcionais. Paramos por aqui pois nosso objetivo foi atingido.
+
+```{r}
+capm_b_corrigido <- lm(`PETR4-Rf` ~ MKT + I(MKT^4), data = df[-outliers_capm_b, ])
+summary(capm_b_corrigido)
+
+resettest(capm_b_corrigido, power = c(2,3,4)) # não corrigiu forma funcional
+
+bptest(capm_b_corrigido) # corrigiu heterocedasticidade
+```
+
+* No modelo Fama-French o teste conclui que não há melhores formas funcionais. 
+
+```{r}
+resettest(ffrench_b_corrigido, power = c(2,3,4,5,6)) # formas funcionais bem especificadas 
+```
+
+# QUESTÃO 3: Regressão Robusta
+
+O método `coeftest` retorna os erros-padrão robustos (erros-padrão de White) atrelados a todos os coeficientes. Isso faz com que seus indicadores de significância sejam alterados, teoricamente em conjunto com a heterocedasticidade. Entretanto, não é possível armazenar esses dados em um objeto de classe "linear model" de forma a aplicar os próximos testes, por isso temos que descartá-lo. 
+
+```{r}
+coeftest(ffrench_b_corrigido, vcov. = vcovHC)
+```
+O método lmrob cria regressões que aceitam o parâmetro que define a matriz de covariâncias a ser utilizada, que é a matriz de White. A partir daí, cria-se um objeto que teoricamente corrige a heterocedasticidade, e que será utilizado nos próximos passos. 
+
+```{r}
+ffrench_b_corrigido <- lmrob(`PETR4-Rf` ~ MKT + HML + SMB, data = df[-outliers_ffrench_b,], cov = ".vcov.w")
+summary(ffrench_b_corrigido)
+```
+
+
+
+# QUESTÃO 3: Normalidade dos Resíduos (após as correções)
+
+As correções para heterocedasticidade e correlação serial não foram capazes de fazer a distribuição dos resíduos de ambos os modelos (FF e CAPM) se tornar normal. 
+
+```{r}
+jarqueberaTest(resid(capm_b_corrigido)) 
+jarqueberaTest(resid(ffrench_b_corrigido)) 
+```
+
+# QUESTÃO 3: Tratamento dos modelos antigos
+
+```{r}
+outliers_capm_a <- which(apply(influence.measures(capm_a)$is.inf, 1, any))
+outliers_ffrench_a <- which(apply(influence.measures(ffrench_a)$is.inf, 1, any))
+
+capm_a_corrigido <- lm(`VALE3-Rf` ~ MKT, data = df[-outliers_capm_a, ])
+summary(capm_a_corrigido)
+
+ffrench_a_corrigido <- lm(`VALE3-Rf` ~ MKT + HML + SMB, data = df[-outliers_ffrench_a, ])
+summary(ffrench_a_corrigido)
+
+# Correlação Serial
+
+bgtest(capm_a_corrigido) # não há correl serial
+bgtest(ffrench_a_corrigido) # não há correl serial
+
+# Heterocedasticidade
+bptest(capm_a_corrigido) # Homocedástico
+bptest(ffrench_a_corrigido) # Homocedástico
+```
+
+# QUESTÃO 4: Teste da hipótese "Beta = 1"
+
+* O teste foi feito por meio da estatística F, em que o modelo restrito trata o coeficiente beta analisado como sendo fixo.
+
+* Em todos os testes aceitamos o modelo irrestrito, ou seja, a hipótese de que o beta = 1 não é significante.
+
+```{r}
+linearHypothesis(capm_a_corrigido, "MKT=1") # não significante 
+
+linearHypothesis(capm_b_corrigido, c("MKT=1")) # não significante
+
+linearHypothesis(ffrench_a_corrigido, "MKT=1") # não significante
+
+linearHypothesis(ffrench_b_corrigido, "MKT=1") # não significante
+```
+# QUESTÃO 4: Risco dos ativos
+
+```{r}
+summary(capm_a_corrigido) # Beta = 1.08
+summary(capm_b_corrigido) # Beta = 1.54
+summary(ffrench_a_corrigido) # Beta = 0.87
+summary(ffrench_b_corrigido) # Beta = 1.42
+```
+
+Analisando os betas do fator de mercado para ambas as ações, tanto o modelo de Fama-French quanto o modelo CAPM propuseram que, de maneira significante, a ação da PETR4 está mais exposta ao risco sistêmico, por apresentar maior beta (que representa a maior influência do fator mercado no retorno da ação). 
+
+# QUESTÃO 5: Teste F entre os modelos do ativo mais arriscado
+
+* Não é possível realizar o teste F convencional entre dois modelos que possuem quantidades de observações diferentes
+
+```{r}
+Anova(capm_b_corrigido, ffrench_b_corrigido) 
+```
+
+* O teste F para os dois modelos rejeita a hipótese nula de que o modelo restrito é válido, indicando que o modelo de Fama-French é preferível ao CAPM. Isso foi verificado comparando o P-valor do teste F para a variável MKT (que está presente em ambos os modelos). Assim, a estatística F encontrada compara ambos os modelos irrestrito (FF) e restrito (CAPM utilizando somente MKT)
+
+# QUESTÃO 6: Teste da hipótese "Alfa = 0"
+
+```{r}
+linearHypothesis(ffrench_b_corrigido, "(Intercept) = 0")  
+```
+
+* O teste de hipótese corrobora com o p-valor do teste-t fornecido pelo sumário do modelo, que diz que o valor obtido para o intercepto era não era estatisticamente significante. O p-valor do teste aceita o modelo restrito de que o intercepto é igual a zero.
+
+# QUESTÃO 7 (Gráfico Resíduos x Tempo - Ativo A)
+
+Podemos notar como o resíduo se comporta antes e após a retirada de dos outliers no modelo de Fama-French
+
+```{r}
+graf <- par(no.readonly = TRUE)
+par(mfrow=c(2,1))
+
+plot((ffrench_a$residuals) ,main= "Modelo com Outliers", xlab="tempo", ylab="Resíduos" ,col=2)
+plot((ffrench_a_corrigido$residuals) ,main= "Modelo sem Outliers", xlab="tempo", ylab="Resíduos",col=3 )
+```
+
+# QUESTÃO 7 (Gráfico Resíduos^2 x Tempo - Ativo A)
+
+Notamos que após a retirada dos Outliers os erros padrões se apresentam de forma mais comportada em torno do 0.
+Isso reforça, agora de forma visual, que ao fazer o teste de correlação serial na Questão 2 o modelo não apresentava média igual a O. Isso foi corrigido com a retirada dos Outliers, porém ainda poderia ser melhorado.
+
+```{r}
+graf <- par(no.readonly = TRUE)
+par(mfrow=c(2,1))
+
+plot((ffrench_a$residuals)^2 ,main= "Modelo com Outliers", xlab="tempo", ylab="Resíduos quadráticos" ,col=2)
+plot((ffrench_a_corrigido$residuals)^2 ,main= "Modelo sem Outliers", xlab="tempo", ylab="Resíduos quadráticos",col=3 )
+```
+
+# QUESTÃO 7 (Gráfico Resíduos x Tempo - Ativo B)
+
+O mesmo ocorre com o outro ativo (Fama-French B)
+
+```{r}
+graf <- par(no.readonly = TRUE)
+par(mfrow=c(2,1))
+
+plot((ffrench_b$residuals) ,main= "Modelo com Outliers", xlab="tempo", ylab="Resíduos" ,col=2)
+plot((ffrench_b_corrigido$residuals) ,main= "Modelo sem Outliers", xlab="tempo", ylab="Resíduos",col=3 )
+```
+
+# QUESTÃO 7 (Gráfico Resíduos^2 x Tempo - Ativo B)
+
+Notamos que após a retirada dos Outliers os erros padrões se apresentam de forma mais comportada em torno do 0. Isso reforça, agora de forma visual, que ao fazer o teste de correlação serial na questão 2 o modelo não apresentava média igual a O. Isso foi corrigido com a retirada dos outliers, porém ainda poderia ser melhorado.
+
+```{r}
+graf <- par(no.readonly = TRUE)
+par(mfrow=c(2,1))
+
+plot((ffrench_b$residuals)^2 ,main= "Modelo com Outliers", xlab="tempo", ylab="Resíduos quadráticos" ,col=2)
+plot((ffrench_b_corrigido$residuals)^2 ,main= "Modelo sem Outliers", xlab="tempo", ylab="Resíduos quadráticos",col=3 )
+```
+
+```{r}
+
+varProp =lm(`PETR4-Rf` ~ MKT, weigh= 1/abs(MKT) ,data = df)
+outliers_varProp <- which(apply(influence.measures(varProp)$is.inf, 1, any))
+varProp_corrigido <- lmrob(`PETR4-Rf` ~ MKT + HML + SMB, data = df[-outliers_varProp,], cov = ".vcov.w")
+
+graf <- par(no.readonly = TRUE)
+
+par(mfrow=c(3,1))
+
+plot((ffrench_b$residual)^2 ,main= "Modelo com Outliers", xlab="tempo", ylab="Resíduos quadráticos" ,col=1)
+plot((ffrench_b_corrigido$residuals)^2 ,main= "Modelo sem Outliers", xlab="tempo", ylab="Resíduos quadráticos" ,col=2)
+plot((residuals(varProp_corrigido)^2),main= "Modelo com variância proporcional ao erro", xlab="tempo", ylab="Resíduos quadráticos" ,col=3)
+```
